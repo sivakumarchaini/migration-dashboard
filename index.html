@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Migration Control Tower · BW → UAT CONS</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#09090f;--surface:#111118;--surface2:#17171f;--border:#222230;
+    --accent:#4f6fff;--warn:#ffb347;--danger:#ff4d6d;--success:#00d9aa;
+    --text:#e8e8f0;--muted:#6b6b80;
+    --t-ext:#4f6fff;--t-trans:#a855f7;--t-load:#00d9aa;--t-res:#ffb347;
+    --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--display:'Syne',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;}
+
+  /* HEADER */
+  header{border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;background:rgba(9,9,15,.94);backdrop-filter:blur(12px);}
+  .logo{font-family:var(--display);font-size:18px;font-weight:800;letter-spacing:-.5px;}
+  .logo span{color:var(--accent);}
+  .hdr-r{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+  .env-badge{font-family:var(--mono);font-size:11px;padding:4px 10px;background:rgba(79,111,255,.12);border:1px solid rgba(79,111,255,.3);border-radius:4px;color:var(--accent);letter-spacing:1px;}
+  .date-lbl{font-family:var(--mono);font-size:11px;color:var(--muted);}
+
+  /* SYNC STATUS PILL */
+  .sync-pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:all .2s;}
+  .sync-pill.ok   {background:rgba(0,217,170,.1); color:var(--success);border:1px solid rgba(0,217,170,.25);}
+  .sync-pill.err  {background:rgba(255,77,109,.1);color:var(--danger); border:1px solid rgba(255,77,109,.25);}
+  .sync-pill.busy {background:rgba(79,111,255,.1);color:var(--accent);  border:1px solid rgba(79,111,255,.25);}
+  .sync-pill.none {background:rgba(107,107,128,.1);color:var(--muted);  border:1px solid var(--border);}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .spin{animation:spin .8s linear infinite;display:inline-block;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* SETUP BANNER */
+  .setup-banner{background:rgba(79,111,255,.07);border:1px solid rgba(79,111,255,.2);border-radius:10px;padding:18px 24px;margin-bottom:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  .setup-banner.hidden{display:none;}
+  .setup-text{flex:1;font-size:13px;color:var(--text);line-height:1.6;}
+  .setup-text strong{color:var(--accent);}
+  .setup-text code{font-family:var(--mono);font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:3px;color:var(--warn);}
+
+  main{max-width:1600px;margin:0 auto;padding:28px 32px;}
+
+  /* SUMMARY CARDS */
+  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:32px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px;position:relative;overflow:hidden;transition:border-color .2s;animation:fadeUp .4s ease both;}
+  .card:hover{border-color:#333344;}
+  .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--cc,var(--accent));}
+  .card:nth-child(1){animation-delay:.05s}.card:nth-child(2){animation-delay:.1s}.card:nth-child(3){animation-delay:.15s}.card:nth-child(4){animation-delay:.2s}.card:nth-child(5){animation-delay:.25s}
+  .c-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;}
+  .c-val{font-family:var(--display);font-size:32px;font-weight:800;line-height:1;}
+  .c-sub{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--mono);}
+
+  /* ACTION BAR */
+  .action-bar{display:flex;gap:10px;align-items:center;margin-bottom:20px;padding:12px 16px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);flex-wrap:wrap;}
+  .action-bar span{font-family:var(--mono);font-size:11px;color:var(--muted);flex:1;min-width:160px;}
+
+  /* TABS */
+  .tabs{display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);overflow-x:auto;}
+  .tab{font-family:var(--mono);font-size:11px;padding:9px 18px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s;margin-bottom:-1px;letter-spacing:.5px;white-space:nowrap;flex-shrink:0;}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .tab:hover:not(.active){color:var(--text);}
+
+  /* TABLE */
+  .tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:12px 16px;text-align:left;background:var(--surface2);border-bottom:1px solid var(--border);}
+  tbody tr{border-bottom:1px solid var(--border);transition:background .15s;}
+  tbody tr:last-child{border-bottom:none;}
+  tbody tr:hover{background:var(--surface2);}
+  tbody td{padding:12px 16px;font-size:13px;vertical-align:middle;}
+  .obj-name{font-family:var(--mono);font-size:12px;font-weight:600;}
+  .num{font-family:var(--mono);font-size:13px;text-align:right;}
+  .nc{text-align:right;}
+  .clr-ok{color:var(--success);}.clr-w{color:var(--warn);}.clr-e{color:var(--danger);}
+  .spill{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:20px;letter-spacing:.5px;white-space:nowrap;}
+  .p-ok{background:rgba(0,217,170,.10);color:var(--success);border:1px solid rgba(0,217,170,.22);}
+  .p-w {background:rgba(255,179,71,.10);color:var(--warn);  border:1px solid rgba(255,179,71,.22);}
+  .p-e {background:rgba(255,77,109,.10);color:var(--danger);border:1px solid rgba(255,77,109,.22);}
+  .p-p {background:rgba(107,107,128,.14);color:var(--muted);border:1px solid var(--border);}
+  .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .prog{height:4px;background:var(--border);border-radius:2px;overflow:hidden;width:80px;display:inline-block;vertical-align:middle;margin-left:8px;}
+  .prog-fill{height:100%;border-radius:2px;transition:width .4s;}
+
+  /* SP ICONS */
+  .sp-icons{display:flex;gap:5px;align-items:center;}
+  .sp-ic{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;font-size:13px;border:1px solid var(--border);background:var(--surface2);text-decoration:none;transition:all .15s;cursor:pointer;position:relative;flex-shrink:0;}
+  .sp-ic:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.35);}
+  .ic-sql.on{background:rgba(79,111,255,.18);border-color:rgba(79,111,255,.4);}
+  .ic-succ.on{background:rgba(0,217,170,.15);border-color:rgba(0,217,170,.35);}
+  .ic-err.on{background:rgba(255,77,109,.15);border-color:rgba(255,77,109,.35);}
+  .sp-ic.off{opacity:.2;cursor:default;pointer-events:none;}
+  .ic-tip{display:none;position:absolute;bottom:135%;left:50%;transform:translateX(-50%);background:#1b1b27;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:5px;white-space:nowrap;pointer-events:none;z-index:60;}
+  .sp-ic:hover .ic-tip{display:block;}
+  .ic-edit{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:5px;cursor:pointer;border:1px dashed #2e2e45;color:var(--muted);background:transparent;transition:all .15s;flex-shrink:0;}
+  .ic-edit:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ERROR PANEL */
+  .err-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-top:24px;}
+  .err-panel-hdr{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+  .err-panel-title{font-family:var(--display);font-size:14px;font-weight:700;}
+  .err-badge{background:rgba(255,77,109,.15);color:var(--danger);border:1px solid rgba(255,77,109,.3);font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:20px;}
+  .err-list{padding:0;}
+  .err-item{display:grid;grid-template-columns:150px 150px 1fr auto;gap:16px;align-items:start;padding:14px 20px;border-bottom:1px solid var(--border);}
+  .err-item:last-child{border-bottom:none;}
+  .err-obj{font-family:var(--mono);font-size:11px;color:var(--accent);}
+  .err-type{font-family:var(--mono);font-size:10px;color:var(--warn);}
+  .err-desc{color:#aaaabc;line-height:1.5;font-size:12px;}
+  .err-cnt{font-family:var(--mono);font-size:13px;color:var(--danger);white-space:nowrap;}
+
+  /* LINKS TAB */
+  .links-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
+  .lk-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+  .lk-card:hover{border-color:#333344;}
+  .lk-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--surface2);border-bottom:1px solid var(--border);}
+  .lk-obj{font-family:var(--mono);font-size:13px;font-weight:600;}
+  .lk-body{padding:14px 18px;display:flex;flex-direction:column;gap:12px;}
+  .lk-row{display:flex;align-items:center;gap:10px;min-height:30px;}
+  .ltb{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;white-space:nowrap;min-width:130px;text-align:center;}
+  .ltb-sql{background:rgba(79,111,255,.12);color:var(--accent);border:1px solid rgba(79,111,255,.22);}
+  .ltb-succ{background:rgba(0,217,170,.10);color:var(--success);border:1px solid rgba(0,217,170,.22);}
+  .ltb-err{background:rgba(255,77,109,.10);color:var(--danger);border:1px solid rgba(255,77,109,.22);}
+  .lk-url{flex:1;font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;}
+  .lk-url:hover{text-decoration:underline;}
+  .lk-none{font-family:var(--mono);font-size:11px;color:#2a2a40;}
+  .open-btn{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;background:rgba(79,111,255,.10);color:var(--accent);border:1px solid rgba(79,111,255,.22);text-decoration:none;white-space:nowrap;transition:all .15s;}
+  .open-btn:hover{background:rgba(79,111,255,.2);}
+  .links-empty{text-align:center;padding:60px;color:var(--muted);font-family:var(--mono);font-size:12px;line-height:2;}
+
+  /* TIMELINE TAB */
+  .tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(460px,1fr));gap:16px;}
+  .tl-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+  .tl-card:hover{border-color:#333344;}
+  .tl-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--surface2);border-bottom:1px solid var(--border);}
+  .tl-obj{font-family:var(--mono);font-size:13px;font-weight:700;}
+  .tl-total span{color:var(--accent);font-weight:600;font-family:var(--mono);font-size:12px;}
+  .tl-body{padding:18px 20px;display:flex;flex-direction:column;gap:14px;}
+  .phase-bar-wrap{display:flex;flex-direction:column;gap:6px;}
+  .phase-bar-track{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--border);}
+  .phase-seg{height:100%;transition:width .5s ease;min-width:0;}
+  .seg-ext{background:var(--t-ext);}.seg-trans{background:var(--t-trans);}.seg-load{background:var(--t-load);}.seg-res{background:var(--t-res);}
+  .phase-legend{display:flex;gap:12px;flex-wrap:wrap;}
+  .leg-item{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted);}
+  .leg-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+  .phase-rows{display:flex;flex-direction:column;gap:8px;}
+  .phase-row{display:flex;align-items:center;gap:12px;}
+  .ph-label{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--muted);min-width:160px;}
+  .ph-color{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+  .ph-bar-bg{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+  .ph-bar-fill{height:100%;border-radius:3px;transition:width .5s ease;}
+  .ph-time{font-family:var(--mono);font-size:12px;color:var(--text);min-width:70px;text-align:right;}
+  .ph-time.dim{color:var(--muted);}
+  .ph-pct{font-family:var(--mono);font-size:10px;color:var(--muted);min-width:36px;text-align:right;}
+  .tl-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+  .tl-sum-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;}
+  .tl-sum-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--sc);}
+  .tl-sum-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;}
+  .tl-sum-val{font-family:var(--display);font-size:22px;font-weight:800;line-height:1;}
+  .tl-empty{text-align:center;padding:60px;color:var(--muted);font-family:var(--mono);font-size:12px;line-height:2;}
+
+  /* TREND */
+  .trend-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px;}
+  .chart-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;}
+  .chart-title{font-family:var(--display);font-size:13px;font-weight:700;margin-bottom:16px;color:var(--muted);}
+  .bar-chart{display:flex;align-items:flex-end;gap:8px;height:100px;}
+  .bar-grp{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .bar-wrap{width:100%;display:flex;gap:2px;align-items:flex-end;height:80px;}
+  .bar{flex:1;border-radius:3px 3px 0 0;min-height:2px;transition:height .4s;}
+  .bar-lbl{font-family:var(--mono);font-size:9px;color:var(--muted);}
+
+  /* MODALS */
+  .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;}
+  .backdrop.open{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:720px;max-height:92vh;overflow-y:auto;padding:28px;}
+  .m-title{font-family:var(--display);font-size:20px;font-weight:800;margin-bottom:6px;}
+  .m-sub{font-size:12px;color:var(--muted);margin-bottom:22px;font-family:var(--mono);}
+  .frow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+  .fg{display:flex;flex-direction:column;gap:6px;}
+  .fg.full{grid-column:1/-1;}
+  label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+  input,select,textarea{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:10px 12px;font-family:var(--mono);font-size:13px;outline:none;transition:border-color .2s;width:100%;}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+  textarea{resize:vertical;min-height:66px;font-size:12px;}
+  select option{background:var(--surface2);}
+  .divider{border:none;border-top:1px solid var(--border);margin:20px 0;}
+  .m-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;align-items:center;}
+  .modal-section{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
+  .modal-section::before,.modal-section::after{content:'';flex:1;height:1px;background:var(--border);}
+  .unit-hint{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px;}
+  .lbl-ext{color:var(--t-ext)!important;}.lbl-trans{color:var(--t-trans)!important;}.lbl-load{color:var(--t-load)!important;}.lbl-res{color:var(--t-res)!important;}
+  .sp-section{margin-bottom:22px;}
+  .sp-sec-title{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;}
+  .sp-sec-title::before,.sp-sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .sp-row{display:flex;gap:8px;align-items:center;}
+  .sp-ico-lbl{font-size:16px;flex-shrink:0;}
+  .test-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;padding:9px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap;}
+  .test-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .lbl-input{margin-top:8px;}
+
+  /* SETUP MODAL SPECIFIC */
+  .setup-step{display:flex;gap:14px;margin-bottom:20px;align-items:flex-start;}
+  .step-num{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-family:var(--display);font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+  .step-body{flex:1;}
+  .step-title{font-family:var(--display);font-size:14px;font-weight:700;margin-bottom:6px;}
+  .step-desc{font-size:12px;color:var(--muted);line-height:1.6;font-family:var(--sans);}
+  .step-desc a{color:var(--accent);}
+  .step-desc code{font-family:var(--mono);background:var(--surface2);padding:2px 6px;border-radius:3px;color:var(--warn);font-size:11px;}
+  .url-input-row{display:flex;gap:8px;margin-top:10px;}
+  .url-test-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;padding:10px 14px;background:var(--accent);border:none;color:#fff;border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap;}
+  .url-test-btn:hover{background:#6378ff;}
+
+  /* BUTTONS */
+  .btn{font-family:var(--display);font-size:13px;font-weight:700;padding:10px 20px;border-radius:8px;cursor:pointer;border:none;transition:all .2s;}
+  .btn-p{background:var(--accent);color:#fff;}
+  .btn-p:hover{background:#6378ff;transform:translateY(-1px);}
+  .btn-g{background:transparent;color:var(--muted);border:1px solid var(--border);}
+  .btn-g:hover{color:var(--text);border-color:#444;}
+  .btn-sm{padding:7px 14px;font-size:11px;}
+  .btn-success{background:var(--success);color:#09090f;}
+  .btn-success:hover{background:#00f0bb;}
+
+  .day-hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .day-hdr strong{color:var(--text);font-size:13px;}
+  .empty{text-align:center;padding:48px;color:var(--muted);font-family:var(--mono);font-size:12px;}
+
+  /* TOAST */
+  .toast{position:fixed;bottom:28px;right:28px;z-index:999;font-family:var(--mono);font-size:12px;padding:12px 18px;border-radius:8px;animation:fadeUp .3s ease;pointer-events:none;max-width:320px;}
+  .toast.ok  {background:#0d2e1f;color:var(--success);border:1px solid rgba(0,217,170,.3);}
+  .toast.err {background:#2e0d14;color:var(--danger); border:1px solid rgba(255,77,109,.3);}
+  .toast.info{background:#0d1630;color:var(--accent);  border:1px solid rgba(79,111,255,.3);}
+
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  @media(max-width:1000px){.cards{grid-template-columns:repeat(3,1fr)}.trend-grid,.tl-grid{grid-template-columns:1fr}.tl-summary-strip{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Migration <span>Control</span> Tower</div>
+  <div class="hdr-r">
+    <span class="env-badge">BW → UAT CONS</span>
+    <span class="date-lbl" id="todayLbl"></span>
+    <span class="sync-pill none" id="syncPill" onclick="manualSync()" title="Click to sync now">
+      <span class="sync-dot"></span><span id="syncTxt">Not connected</span>
+    </span>
+    <button class="btn btn-g btn-sm" onclick="openSetup()">⚙ Setup</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- SETUP BANNER (shown until script URL is entered) -->
+  <div class="setup-banner" id="setupBanner">
+    <div style="font-size:22px">🔗</div>
+    <div class="setup-text">
+      <strong>Connect to Google Sheets to sync data across all devices.</strong><br>
+      Click <strong>⚙ Setup</strong> in the top right and follow the 3-step guide — takes about 5 minutes. Once connected, every entry you save here is instantly stored in your Google Sheet and visible to anyone who opens the dashboard.
+    </div>
+    <button class="btn btn-p btn-sm" onclick="openSetup()">Connect Now →</button>
+  </div>
+
+  <!-- SUMMARY CARDS -->
+  <div class="cards">
+    <div class="card" style="--cc:#4f6fff"><div class="c-lbl">Total Source</div><div class="c-val" id="cSource">—</div><div class="c-sub">Records expected</div></div>
+    <div class="card" style="--cc:#7c5fff"><div class="c-lbl">Extracted</div><div class="c-val" id="cExtract">—</div><div class="c-sub" id="cExtractPct">—% of source</div></div>
+    <div class="card" style="--cc:#00d9aa"><div class="c-lbl">LAD Count</div><div class="c-val" id="cLad">—</div><div class="c-sub" id="cLadPct">Loaded &amp; Delivered</div></div>
+    <div class="card" style="--cc:#ff4d6d"><div class="c-lbl">Errors</div><div class="c-val" id="cError">—</div><div class="c-sub" id="cErrorPct">—% error rate</div></div>
+    <div class="card" style="--cc:#ffb347"><div class="c-lbl">Objects Tracked</div><div class="c-val" id="cObjects">0</div><div class="c-sub" id="cObjStatus">No entries yet</div></div>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div class="action-bar">
+    <span>📋 BW → UAT CONS · <span id="lastSyncLabel" style="color:var(--success)">Not synced yet</span></span>
+    <button class="btn btn-g btn-sm" onclick="manualSync()">🔄 Sync Now</button>
+    <button class="btn btn-g btn-sm" onclick="copyReport()">📧 Copy Email Report</button>
+    <button class="btn btn-g btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn btn-g btn-sm" onclick="openLinks(null)">🔗 SP Links</button>
+    <button class="btn btn-g btn-sm" onclick="openTimeline(null)">⏱ Log Timings</button>
+    <button class="btn btn-p btn-sm" onclick="openData()">+ Log Today's Data</button>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('objects',this)">BY OBJECT</div>
+    <div class="tab" onclick="switchTab('timeline',this)">⏱ TIMELINES</div>
+    <div class="tab" onclick="switchTab('links',this)">🔗 SHAREPOINT LINKS</div>
+    <div class="tab" onclick="switchTab('daily',this)">DAILY LOG</div>
+    <div class="tab" onclick="switchTab('errors',this)">ERRORS ONLY</div>
+  </div>
+
+  <!-- BY OBJECT TAB -->
+  <div id="tab-objects">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Object / Table</th><th class="nc">Source</th><th class="nc">Extracted</th>
+          <th class="nc">LAD</th><th class="nc">Errors</th><th class="nc">Match %</th>
+          <th>Status</th><th>SP Files</th><th>Last Updated</th>
+        </tr></thead>
+        <tbody id="objBody"><tr><td colspan="9" class="empty">No data yet — click "+ Log Today's Data" to begin.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="err-panel" id="errPanel" style="display:none">
+      <div class="err-panel-hdr"><div class="err-panel-title">⚠ Error Details</div><span class="err-badge" id="errBadge">0</span></div>
+      <div class="err-list" id="errList"></div>
+    </div>
+  </div>
+
+  <!-- TIMELINES TAB -->
+  <div id="tab-timeline" style="display:none">
+    <div class="tl-summary-strip">
+      <div class="tl-sum-card" style="--sc:var(--t-ext)"><div class="tl-sum-lbl">Avg Extraction</div><div class="tl-sum-val" id="avgExt">—</div></div>
+      <div class="tl-sum-card" style="--sc:var(--t-trans)"><div class="tl-sum-lbl">Avg Transformation</div><div class="tl-sum-val" id="avgTrans">—</div></div>
+      <div class="tl-sum-card" style="--sc:var(--t-load)"><div class="tl-sum-lbl">Avg Load</div><div class="tl-sum-val" id="avgLoad">—</div></div>
+      <div class="tl-sum-card" style="--sc:var(--t-res)"><div class="tl-sum-lbl">Avg Resolution</div><div class="tl-sum-val" id="avgRes">—</div></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">Per-object phase duration breakdown</div>
+      <button class="btn btn-g btn-sm" onclick="openTimeline(null)">+ Log Timings</button>
+    </div>
+    <div class="tl-grid" id="tlGrid"><div class="tl-empty">No timing data yet.</div></div>
+  </div>
+
+  <!-- SP LINKS TAB -->
+  <div id="tab-links" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">SQL Query · Success / Extracted · Error Log</div>
+      <button class="btn btn-g btn-sm" onclick="openLinks(null)">+ Add Links</button>
+    </div>
+    <div class="links-grid" id="linksGrid"><div class="links-empty">No links added yet.</div></div>
+  </div>
+
+  <!-- DAILY LOG TAB -->
+  <div id="tab-daily" style="display:none">
+    <div class="tbl-wrap" id="dailyWrap"><div class="empty">No daily logs yet.</div></div>
+  </div>
+
+  <!-- ERRORS TAB -->
+  <div id="tab-errors" style="display:none">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Object</th><th>Error Type</th><th class="nc">Count</th><th>Description</th></tr></thead>
+        <tbody id="errBody"><tr><td colspan="5" class="empty">No errors logged yet.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TREND CHARTS -->
+  <div class="trend-grid" id="trendSec" style="display:none">
+    <div class="chart-box"><div class="chart-title">EXTRACTION TREND — LAST 7 DAYS</div><div class="bar-chart" id="exChart"></div></div>
+    <div class="chart-box"><div class="chart-title">ERROR TREND — LAST 7 DAYS</div><div class="bar-chart" id="erChart"></div></div>
+  </div>
+
+</main>
+
+<!-- ════════════════════════════════
+  SETUP MODAL
+════════════════════════════════ -->
+<div class="backdrop" id="setupModal" onclick="bgClose(event,'setupModal')">
+  <div class="modal" style="width:760px">
+    <div class="m-title">⚙ Connect to Google Sheets</div>
+    <div class="m-sub">One-time setup · Takes about 5 minutes · Free · No IT needed</div>
+
+    <div class="setup-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Create a free JSONBin account</div>
+        <div class="step-desc">
+          Go to <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> → click <strong>Sign Up Free</strong> → use your email or Google account.
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Get your API Key</div>
+        <div class="step-desc">
+          After logging in → click your profile icon (top right) → <strong>API Keys</strong><br>
+          Copy your <strong>Master Key</strong> — it starts with <code>$2a$10$...</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Create a Bin</div>
+        <div class="step-desc">
+          Click <strong>Bins → + Create Bin</strong><br>
+          Name it <code>MigrationControlTower</code><br>
+          Set content to <code>{}</code> and click <strong>Create</strong><br>
+          Copy the <strong>Bin ID</strong> from the URL — it looks like <code>64abc123...</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Paste your credentials below</div>
+        <div class="step-desc" style="margin-bottom:12px">Paste your Bin ID and API Key — then click Connect.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <input type="text" id="setupBinId" placeholder="Bin ID  e.g. 64abc123def456..." style="font-size:12px">
+          <input type="text" id="setupApiKey" placeholder="Master Key  e.g. $2a$10$..." style="font-size:12px">
+          <button class="url-test-btn" onclick="connectJSONBin()" style="width:fit-content">Connect ✓</button>
+        </div>
+        <div id="setupStatus" style="font-family:var(--mono);font-size:11px;margin-top:10px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div style="background:var(--surface2);border-radius:8px;padding:14px 18px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.8;">
+      <strong style="color:var(--text);">Current connection:</strong><br>
+      <span id="currentUrl" style="color:var(--accent);word-break:break-all;">Not connected</span>
+    </div>
+
+    <div class="m-foot">
+      <button class="btn btn-g" onclick="closeM('setupModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
+  DATA ENTRY MODAL
+════════════════════════════════ -->
+<div class="backdrop" id="dataModal" onclick="bgClose(event,'dataModal')">
+  <div class="modal">
+    <div class="m-title">Log Migration Data</div>
+    <div class="m-sub" id="dataModalSub"></div>
+    <div class="frow">
+      <div class="fg"><label>Date</label><input type="date" id="eDate"></div>
+      <div class="fg"><label>Object / Table Name</label><input type="text" id="eObj" placeholder="e.g. CUSTOMER_MASTER" oninput="this.value=this.value.toUpperCase()"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Source Count</label><input type="number" id="eSrc" placeholder="0" min="0"></div>
+      <div class="fg"><label>Extraction Count</label><input type="number" id="eExt" placeholder="0" min="0"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>LAD Count</label><input type="number" id="eLad" placeholder="0" min="0"></div>
+      <div class="fg"><label>Error Count</label><input type="number" id="eErr" placeholder="0" min="0"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Error Type</label>
+        <select id="eErrType">
+          <option value="">— Select —</option>
+          <option>Mapping Error</option><option>Transformation Error</option><option>Duplicate Record</option>
+          <option>Null / Missing Field</option><option>Data Type Mismatch</option><option>Referential Integrity</option>
+          <option>Load Failure</option><option>SQL Query Error</option><option>Network / Timeout</option><option>Other</option>
+        </select>
+      </div>
+      <div class="fg"><label>Status Override</label>
+        <select id="eStatus">
+          <option value="auto">Auto-detect</option><option value="ok">✅ Complete</option>
+          <option value="warn">⚠ In Progress</option><option value="err">❌ Failed</option><option value="pend">⏳ Pending</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow"><div class="fg full"><label>Notes / Error Description</label><textarea id="eDesc" placeholder="Issues, workarounds, or progress notes..."></textarea></div></div>
+    <hr class="divider">
+    <div class="modal-section">⏱ Phase Timings (optional)</div>
+    <div class="unit-hint">Enter time in <strong>minutes</strong>. Leave blank if not yet known.</div>
+    <div class="frow">
+      <div class="fg"><label class="lbl-ext">🔵 Extraction Time (mins)</label><input type="number" id="tExt" placeholder="e.g. 45" min="0" step="0.1"></div>
+      <div class="fg"><label class="lbl-trans">🟣 Transformation Time (mins)</label><input type="number" id="tTrans" placeholder="e.g. 30" min="0" step="0.1"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="lbl-load">🟢 Load Time (mins)</label><input type="number" id="tLoad" placeholder="e.g. 20" min="0" step="0.1"></div>
+      <div class="fg"><label class="lbl-res">🟡 Resolution Time (mins)</label><input type="number" id="tRes" placeholder="e.g. 60" min="0" step="0.1"></div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-g" onclick="closeM('dataModal')">Cancel</button>
+      <button class="btn btn-g btn-sm" style="margin-right:auto" onclick="saveAndLinks()">Save &amp; Add SP Links →</button>
+      <button class="btn btn-p" onclick="saveEntry()">Save &amp; Sync</button>
+    </div>
+  </div>
+</div>
+
+<!-- TIMELINES MODAL -->
+<div class="backdrop" id="tlModal" onclick="bgClose(event,'tlModal')">
+  <div class="modal">
+    <div class="m-title">Log Phase Timings</div>
+    <div class="m-sub">Enter how long each migration phase took (in minutes).</div>
+    <div class="frow">
+      <div class="fg"><label>Object / Table Name</label><input type="text" id="tlObj" placeholder="e.g. CUSTOMER_MASTER" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="fg"><label>Date</label><input type="date" id="tlDate"></div>
+    </div>
+    <div class="unit-hint" style="margin-bottom:18px">All values in <strong>minutes</strong>. Total is auto-calculated.</div>
+    <div class="frow">
+      <div class="fg"><label class="lbl-ext">🔵 Extraction Time</label><input type="number" id="tlExt" placeholder="e.g. 45" min="0" step="0.1" oninput="calcTotal()"></div>
+      <div class="fg"><label class="lbl-trans">🟣 Transformation Time</label><input type="number" id="tlTrans" placeholder="e.g. 30" min="0" step="0.1" oninput="calcTotal()"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="lbl-load">🟢 Load Time</label><input type="number" id="tlLoad" placeholder="e.g. 20" min="0" step="0.1" oninput="calcTotal()"></div>
+      <div class="fg"><label class="lbl-res">🟡 Resolution Time</label><input type="number" id="tlRes" placeholder="e.g. 60" min="0" step="0.1" oninput="calcTotal()"></div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">Total Time</span>
+      <span style="font-family:var(--display);font-size:22px;font-weight:800" id="tlTotalDisplay">— mins</span>
+    </div>
+    <div class="fg"><label>Notes</label><textarea id="tlNotes" placeholder="Bottlenecks, delays, observations..."></textarea></div>
+    <div class="m-foot">
+      <button class="btn btn-g" onclick="closeM('tlModal')">Cancel</button>
+      <button class="btn btn-p" onclick="saveTiming()">Save &amp; Sync</button>
+    </div>
+  </div>
+</div>
+
+<!-- SP LINKS MODAL -->
+<div class="backdrop" id="linksModal" onclick="bgClose(event,'linksModal')">
+  <div class="modal">
+    <div class="m-title">SharePoint File Links</div>
+    <div class="m-sub">Paste the SharePoint URLs for this object's 3 migration files.</div>
+    <div class="fg" style="margin-bottom:24px"><label>Object / Table Name</label><input type="text" id="lObj" placeholder="e.g. CUSTOMER_MASTER" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="sp-section">
+      <div class="sp-sec-title">🔵 SQL Query File</div>
+      <div class="sp-row"><span class="sp-ico-lbl">📄</span><input type="url" id="lSql" placeholder="https://yourcompany.sharepoint.com/..."><button class="test-btn" onclick="testLnk('lSql')">↗ Test</button></div>
+      <div class="fg lbl-input"><label>Display Label</label><input type="text" id="lSqlLbl" placeholder="e.g. CUSTOMER_extract.sql"></div>
+    </div>
+    <div class="sp-section">
+      <div class="sp-sec-title">🟢 Success / Extracted File</div>
+      <div class="sp-row"><span class="sp-ico-lbl">✅</span><input type="url" id="lSucc" placeholder="https://yourcompany.sharepoint.com/..."><button class="test-btn" onclick="testLnk('lSucc')">↗ Test</button></div>
+      <div class="fg lbl-input"><label>Display Label</label><input type="text" id="lSuccLbl" placeholder="e.g. CUSTOMER_success.csv"></div>
+    </div>
+    <div class="sp-section">
+      <div class="sp-sec-title">🔴 Error Log File</div>
+      <div class="sp-row"><span class="sp-ico-lbl">🪵</span><input type="url" id="lErrLog" placeholder="https://yourcompany.sharepoint.com/..."><button class="test-btn" onclick="testLnk('lErrLog')">↗ Test</button></div>
+      <div class="fg lbl-input"><label>Display Label</label><input type="text" id="lErrLogLbl" placeholder="e.g. CUSTOMER_errors.log"></div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-g" onclick="closeM('linksModal')">Cancel</button>
+      <button class="btn btn-p" onclick="saveLinks()">Save &amp; Sync</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════
+let entries = JSON.parse(localStorage.getItem('mig_entries')  || '[]');
+let spLinks  = JSON.parse(localStorage.getItem('mig_sp3')     || '{}');
+let timings  = JSON.parse(localStorage.getItem('mig_timings') || '{}');
+// JSONBin — zero CORS, works from any browser/device
+const _BIN_ID  = '69b2d2f7aa77b81da9dbdcfd';
+const _BIN_KEY = '$2a$10$7WWRL7eoDz1xpqH8o4ZDvO5VDz9pAKyVTUvBjfEn5nccbYgzfxI9y';
+function getBinId()  { return localStorage.getItem('mig_bin_id')  || _BIN_ID; }
+function getBinKey() { return localStorage.getItem('mig_bin_key') || _BIN_KEY; }
+function getBinURL() { return `https://api.jsonbin.io/v3/b/${getBinId()}`; }
+let isSyncing = false;
+
+// ════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════
+const NOW = new Date();
+document.getElementById('todayLbl').textContent     = NOW.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+document.getElementById('dataModalSub').textContent = 'Logging for: '+NOW.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+document.getElementById('eDate').value  = ts();
+document.getElementById('tlDate').value = ts();
+updateSetupUI();
+render();
+syncFromDB();
+
+// ════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════
+function ts(){ return new Date().toISOString().split('T')[0]; }
+function fd(d){ if(!d)return'—'; return new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+function pct(a,b){ return b>0?((a/b)*100).toFixed(1):'—'; }
+function fmtTime(m){
+  if(m===null||m===undefined||m==='')return'—';
+  const v=parseFloat(m); if(isNaN(v))return'—';
+  if(v<60) return (v%1===0?v:v.toFixed(1))+'m';
+  const h=Math.floor(v/60),r=Math.round(v%60);
+  return r>0?`${h}h ${r}m`:`${h}h`;
+}
+function getStatus(e){
+  if(e.status!=='auto')return e.status;
+  if(e.error>0&&e.lad===0)return'err';
+  if(e.error>0)return'warn';
+  if(e.source>0&&e.lad>=e.source)return'ok';
+  if(e.lad>0)return'warn';
+  return'pend';
+}
+function pill(s){
+  const m={ok:['p-ok','✓ Complete'],warn:['p-w','⚠ Partial'],err:['p-e','✕ Errors'],pend:['p-p','⏳ Pending']};
+  const[c,l]=m[s]||m.pend;
+  return`<span class="spill ${c}"><span class="dot"></span>${l}</span>`;
+}
+function showToast(msg,type='ok',dur=3000){
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),dur);
+}
+
+// ════════════════════════════════════════════
+//  JSONBIN SYNC — no CORS, works everywhere
+// ════════════════════════════════════════════
+function setSyncPill(state,txt){
+  const p=document.getElementById('syncPill');
+  p.className='sync-pill '+state;
+  document.getElementById('syncTxt').textContent=txt;
+}
+
+async function syncToDB(silent){
+  if(!getBinId()){ if(!silent) showToast('⚠ Not connected — click ⚙ Setup first.','info'); return; }
+  setSyncPill('busy','Saving…');
+  try{
+    const r = await fetch(getBinURL(), {
+      method: 'PUT',
+      headers: { 'Content-Type':'application/json', 'X-Master-Key': getBinKey(), 'X-Bin-Versioning':'false' },
+      body: JSON.stringify({ entries, timings, spLinks })
+    });
+    if(!r.ok) throw new Error(r.status);
+    setSyncPill('ok','Saved ✓');
+    const now=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('lastSyncLabel').textContent='Last synced '+now;
+    if(!silent) showToast('✅ Saved & synced!');
+  }catch(e){
+    setSyncPill('err','Save failed');
+    showToast('❌ Save failed — data kept locally.','err',5000);
+    console.error('JSONBin PUT error:',e);
+  }
+}
+
+async function pushToDB(){ await syncToDB(true); }
+
+async function syncFromDB(){
+  if(!getBinId()){ setSyncPill('none','Not set up'); return; }
+  setSyncPill('busy','Loading…');
+  try{
+    const r = await fetch(getBinURL()+'/latest', {
+      headers:{ 'X-Master-Key': getBinKey() }
+    });
+    if(!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const rec = d.record || d;
+    if(Array.isArray(rec.entries)){ entries=rec.entries; localStorage.setItem('mig_entries',JSON.stringify(entries)); }
+    if(rec.timings && typeof rec.timings==='object'){ timings=rec.timings; localStorage.setItem('mig_timings',JSON.stringify(timings)); }
+    if(rec.spLinks && typeof rec.spLinks==='object'){ spLinks=rec.spLinks; localStorage.setItem('mig_sp3',JSON.stringify(spLinks)); }
+    setSyncPill('ok','Live ✓');
+    const now=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('lastSyncLabel').textContent='Last synced '+now;
+    render();
+    showToast('✅ Live data loaded!');
+  }catch(e){
+    setSyncPill('err','Load failed');
+    showToast('❌ Could not load — showing local data.','err',4000);
+    console.error('JSONBin GET error:',e);
+  }
+}
+
+function manualSync(){ syncFromDB(); }
+
+// ════════════════════════════════════════════
+//  SETUP
+// ════════════════════════════════════════════
+function updateSetupUI(){
+  document.getElementById('setupBanner').classList.add('hidden');
+  const configured = !!getBinId();
+  document.getElementById('currentUrl').textContent = configured ? '✅ JSONBin connected — Bin: '+getBinId() : 'Not connected — click ⚙ Setup to connect';
+  setSyncPill(configured?'ok':'none', configured?'Connected ✓':'Not set up');
+}
+
+async function connectSheet(){
+  const url = document.getElementById('setupUrl').value.trim();
+  if(!url||!url.includes('script.google.com')){
+    document.getElementById('setupStatus').textContent='⚠ Please paste a valid Google Apps Script Web App URL.';
+    document.getElementById('setupStatus').style.color='var(--danger)';return;
+  }
+  document.getElementById('setupStatus').textContent='🔄 Testing connection…';
+  document.getElementById('setupStatus').style.color='var(--muted)';
+  try{
+    const r=await fetch(url+'?action=ping');
+    const d=await r.json();
+    if(d.status==='ok'){
+      SHEET_URL=url;
+      localStorage.setItem('mig_sheet_url',SHEET_URL);
+      document.getElementById('setupStatus').textContent='✅ Connected! Syncing your data now…';
+      document.getElementById('setupStatus').style.color='var(--success)';
+      updateSetupUI();
+      // push existing local data to sheet
+      await syncToDB({action:'setAll',entries,timings,spLinks});
+      syncFromSheet();
+    }else throw new Error('bad response');
+  }catch{
+    document.getElementById('setupStatus').textContent='❌ Could not connect. Check the URL and make sure the script is deployed as a Web App.';
+    document.getElementById('setupStatus').style.color='var(--danger)';
+  }
+}
+
+function disconnectSheet(){ showToast('JSONBin is hardcoded — contact admin to change.','info'); }
+
+// ════════════════════════════════════════════
+//  SAVE ENTRY
+// ════════════════════════════════════════════
+function saveEntry(silent){
+  const obj=document.getElementById('eObj').value.trim().toUpperCase();
+  if(!obj){alert('Please enter an object / table name.');return null;}
+  const entry={
+    id:Date.now(),date:document.getElementById('eDate').value,object:obj,
+    source: +document.getElementById('eSrc').value ||0,
+    extract:+document.getElementById('eExt').value ||0,
+    lad:    +document.getElementById('eLad').value ||0,
+    error:  +document.getElementById('eErr').value ||0,
+    errorType:document.getElementById('eErrType').value,
+    status:   document.getElementById('eStatus').value,
+    desc:     document.getElementById('eDesc').value.trim()
+  };
+  entries.push(entry);
+  localStorage.setItem('mig_entries',JSON.stringify(entries));
+  // inline timings
+  const ext=parseFloat(document.getElementById('tExt').value)||null;
+  const trans=parseFloat(document.getElementById('tTrans').value)||null;
+  const load=parseFloat(document.getElementById('tLoad').value)||null;
+  const res=parseFloat(document.getElementById('tRes').value)||null;
+  if(ext||trans||load||res){
+    timings[obj]={ext,trans,load,res,total:(ext||0)+(trans||0)+(load||0)+(res||0),notes:'',date:entry.date};
+    localStorage.setItem('mig_timings',JSON.stringify(timings));
+  }
+  if(!silent){closeM('dataModal');resetDataForm();}
+  render();
+  syncToDB({action:'addEntry',entry,timings:timings[obj]?{obj,data:timings[obj]}:null});
+  return obj;
+}
+function saveAndLinks(){const obj=saveEntry(true);if(!obj)return;closeM('dataModal');resetDataForm();openLinks(obj);}
+function resetDataForm(){
+  ['eObj','eSrc','eExt','eLad','eErr','eDesc','tExt','tTrans','tLoad','tRes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('eErrType').value='';document.getElementById('eStatus').value='auto';document.getElementById('eDate').value=ts();
+}
+
+// ════════════════════════════════════════════
+//  SAVE TIMINGS
+// ════════════════════════════════════════════
+function saveTiming(){
+  const obj=document.getElementById('tlObj').value.trim().toUpperCase();
+  if(!obj){alert('Please enter an object name.');return;}
+  const ext=parseFloat(document.getElementById('tlExt').value)||null;
+  const trans=parseFloat(document.getElementById('tlTrans').value)||null;
+  const load=parseFloat(document.getElementById('tlLoad').value)||null;
+  const res=parseFloat(document.getElementById('tlRes').value)||null;
+  const total=(ext||0)+(trans||0)+(load||0)+(res||0)||null;
+  timings[obj]={ext,trans,load,res,total,notes:document.getElementById('tlNotes').value.trim(),date:document.getElementById('tlDate').value};
+  localStorage.setItem('mig_timings',JSON.stringify(timings));
+  closeM('tlModal');render();
+  syncToDB({action:'setTiming',obj,data:timings[obj]});
+}
+function calcTotal(){
+  const v=['tlExt','tlTrans','tlLoad','tlRes'].reduce((s,id)=>s+(parseFloat(document.getElementById(id).value)||0),0);
+  document.getElementById('tlTotalDisplay').textContent=v>0?fmtTime(v):'— mins';
+}
+
+// ════════════════════════════════════════════
+//  SAVE LINKS
+// ════════════════════════════════════════════
+function saveLinks(){
+  const obj=document.getElementById('lObj').value.trim().toUpperCase();
+  if(!obj){alert('Please enter an object name.');return;}
+  spLinks[obj]={sql:document.getElementById('lSql').value.trim(),sqlLbl:document.getElementById('lSqlLbl').value.trim(),succ:document.getElementById('lSucc').value.trim(),succLbl:document.getElementById('lSuccLbl').value.trim(),errLog:document.getElementById('lErrLog').value.trim(),errLogLbl:document.getElementById('lErrLogLbl').value.trim()};
+  localStorage.setItem('mig_sp3',JSON.stringify(spLinks));
+  closeM('linksModal');render();
+  syncToDB({action:'setLinks',obj,data:spLinks[obj]});
+}
+function testLnk(id){const u=document.getElementById(id).value.trim();if(u)window.open(u,'_blank');else alert('No URL entered yet.');}
+
+// ════════════════════════════════════════════
+//  RENDER
+// ════════════════════════════════════════════
+function render(){
+  renderSummary();renderObjTable();renderTimelines();
+  renderLinksTab();renderDailyLog();renderErrorsOnly();renderErrPanel();renderCharts();
+}
+
+function renderSummary(){
+  const s=entries.reduce((a,e)=>({src:a.src+e.source,ext:a.ext+e.extract,lad:a.lad+e.lad,err:a.err+e.error}),{src:0,ext:0,lad:0,err:0});
+  document.getElementById('cSource').textContent   =s.src.toLocaleString();
+  document.getElementById('cExtract').textContent  =s.ext.toLocaleString();
+  document.getElementById('cLad').textContent      =s.lad.toLocaleString();
+  document.getElementById('cError').textContent    =s.err.toLocaleString();
+  document.getElementById('cExtractPct').textContent=pct(s.ext,s.src)+'% of source';
+  document.getElementById('cLadPct').textContent   =pct(s.lad,s.src)+'% loaded';
+  document.getElementById('cErrorPct').textContent =pct(s.err,s.ext)+'% error rate';
+  const uq=[...new Set(entries.map(e=>e.object))];
+  const ok=uq.filter(o=>getStatus(entries.filter(e=>e.object===o).at(-1))==='ok').length;
+  document.getElementById('cObjects').textContent  =uq.length;
+  document.getElementById('cObjStatus').textContent=`${ok}/${uq.length} complete`;
+}
+
+function spCell(obj){
+  const lnk=spLinks[obj]||{};
+  const D=[{key:'sql',cls:'ic-sql',em:'🔵',tip:'SQL Query File'},{key:'succ',cls:'ic-succ',em:'🟢',tip:'Success / Extract'},{key:'errLog',cls:'ic-err',em:'🔴',tip:'Error Log File'}];
+  const icons=D.map(d=>{const url=lnk[d.key],lbl=lnk[d.key+'Lbl']||d.tip;if(url)return`<a href="${url}" target="_blank" class="sp-ic ${d.cls} on">${d.em}<span class="ic-tip">${lbl}</span></a>`;return`<span class="sp-ic ${d.cls} off">${d.em}<span class="ic-tip">${d.tip} — not set</span></span>`;}).join('');
+  return`<div class="sp-icons">${icons}<button class="ic-edit" onclick="openLinks('${obj}')">✏</button></div>`;
+}
+
+function renderObjTable(){
+  const tb=document.getElementById('objBody');
+  if(!entries.length){tb.innerHTML='<tr><td colspan="9" class="empty">No data yet.</td></tr>';return;}
+  const objs=[...new Set(entries.map(e=>e.object))];
+  tb.innerHTML=objs.map(obj=>{
+    const lat=entries.filter(e=>e.object===obj).at(-1);
+    const s=getStatus(lat),mp=pct(lat.lad,lat.source);
+    const mc=lat.lad>=lat.source&&lat.source>0?'clr-ok':lat.lad>0?'clr-w':'';
+    const ec=lat.error>0?'clr-e':'clr-ok';
+    const bp=lat.source>0?Math.min(100,(lat.lad/lat.source)*100):0;
+    const bc=s==='ok'?'#00d9aa':s==='warn'?'#ffb347':'#ff4d6d';
+    const t=timings[obj];
+    const tc=t&&t.total?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:4px">⏱${fmtTime(t.total)}</span>`:'';
+    return`<tr><td><span class="obj-name">${obj}</span>${tc}</td><td class="num">${lat.source.toLocaleString()}</td><td class="num">${lat.extract.toLocaleString()}</td><td class="num ${mc}">${lat.lad.toLocaleString()}</td><td class="num ${ec}">${lat.error.toLocaleString()}</td><td class="nc"><span class="${mc}">${mp}%</span><div class="prog"><div class="prog-fill" style="width:${bp}%;background:${bc}"></div></div></td><td>${pill(s)}</td><td>${spCell(obj)}</td><td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fd(lat.date)}</td></tr>`;
+  }).join('');
+}
+
+function renderTimelines(){
+  const grid=document.getElementById('tlGrid');
+  const ow=Object.keys(timings);
+  const vals={ext:[],trans:[],load:[],res:[]};
+  ow.forEach(o=>{const t=timings[o];if(t.ext!=null)vals.ext.push(t.ext);if(t.trans!=null)vals.trans.push(t.trans);if(t.load!=null)vals.load.push(t.load);if(t.res!=null)vals.res.push(t.res);});
+  const avg=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
+  document.getElementById('avgExt').textContent  =avg(vals.ext)!=null  ?fmtTime(avg(vals.ext))  :'—';
+  document.getElementById('avgTrans').textContent=avg(vals.trans)!=null?fmtTime(avg(vals.trans)):'—';
+  document.getElementById('avgLoad').textContent =avg(vals.load)!=null ?fmtTime(avg(vals.load)) :'—';
+  document.getElementById('avgRes').textContent  =avg(vals.res)!=null  ?fmtTime(avg(vals.res))  :'—';
+  if(!ow.length){grid.innerHTML='<div class="tl-empty">No timing data yet.</div>';return;}
+  const allObjs=[...new Set([...entries.map(e=>e.object),...ow])];
+  const PH=[{key:'ext',color:'var(--t-ext)',cls:'seg-ext',label:'Extraction',em:'🔵'},{key:'trans',color:'var(--t-trans)',cls:'seg-trans',label:'Transformation',em:'🟣'},{key:'load',color:'var(--t-load)',cls:'seg-load',label:'Load',em:'🟢'},{key:'res',color:'var(--t-res)',cls:'seg-res',label:'Resolution',em:'🟡'}];
+  grid.innerHTML=allObjs.map(obj=>{
+    const t=timings[obj]||{};
+    const hasData=PH.some(p=>t[p.key]!=null);
+    const total=t.total||(PH.reduce((s,p)=>s+(t[p.key]||0),0));
+    const maxP=Math.max(...PH.map(p=>t[p.key]||0),1);
+    const segs=PH.map(p=>{const w=total>0?((t[p.key]||0)/total*100).toFixed(1):0;return`<div class="phase-seg ${p.cls}" style="width:${w}%"></div>`;}).join('');
+    const rows=PH.map(p=>{const v=t[p.key];const bw=v!=null?(v/maxP*100).toFixed(1):0;return`<div class="phase-row"><div class="ph-label"><span class="ph-color" style="background:${p.color}"></span>${p.em} ${p.label}</div><div class="ph-bar-bg"><div class="ph-bar-fill" style="width:${bw}%;background:${p.color}"></div></div><div class="ph-time ${v==null?'dim':''}">${fmtTime(v)}</div><div class="ph-pct">${v!=null&&total>0?(v/total*100).toFixed(0)+'%':''}</div></div>`;}).join('');
+    const leg=PH.map(p=>`<div class="leg-item"><span class="leg-dot" style="background:${p.color}"></span>${p.label}</div>`).join('');
+    return`<div class="tl-card"><div class="tl-hdr"><span class="tl-obj">${obj}</span><div style="display:flex;align-items:center;gap:10px">${hasData?`<span class="tl-total">Total: <span>${fmtTime(total)}</span></span>`:'<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">No timings</span>'}<button class="ic-edit" onclick="openTimeline('${obj}')">✏</button></div></div><div class="tl-body">${hasData?`<div class="phase-bar-wrap"><div class="phase-bar-track">${segs}</div><div class="phase-legend">${leg}</div></div><div class="phase-rows">${rows}</div>${t.notes?`<div style="font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:10px">📝 ${t.notes}</div>`:''}`:''}</div></div>`;
+  }).join('');
+}
+
+function renderLinksTab(){
+  const grid=document.getElementById('linksGrid');
+  const all=[...new Set([...entries.map(e=>e.object),...Object.keys(spLinks)])];
+  if(!all.length){grid.innerHTML='<div class="links-empty">No links added yet.</div>';return;}
+  const D=[{key:'sql',lk:'sqlLbl',cls:'ltb-sql',em:'🔵',nm:'SQL Query File'},{key:'succ',lk:'succLbl',cls:'ltb-succ',em:'🟢',nm:'Success / Extracted'},{key:'errLog',lk:'errLogLbl',cls:'ltb-err',em:'🔴',nm:'Error Log File'}];
+  grid.innerHTML=all.map(obj=>{const lnk=spLinks[obj]||{};const rows=D.map(d=>{const url=lnk[d.key],lbl=lnk[d.lk]||(url?'Open ↗':'');return`<div class="lk-row"><span class="ltb ${d.cls}">${d.em} ${d.nm}</span>${url?`<a href="${url}" target="_blank" class="lk-url" title="${url}">${lbl}</a><a href="${url}" target="_blank" class="open-btn">↗ Open</a>`:`<span class="lk-none">— not set</span>`}</div>`;}).join('');return`<div class="lk-card"><div class="lk-hdr"><span class="lk-obj">${obj}</span><button class="ic-edit" style="margin:0" onclick="openLinks('${obj}')">✏ Edit</button></div><div class="lk-body">${rows}</div></div>`;}).join('');
+}
+
+function renderDailyLog(){
+  const c=document.getElementById('dailyWrap');
+  if(!entries.length){c.innerHTML='<div class="empty">No daily logs yet.</div>';return;}
+  const bd={};entries.forEach(e=>{(bd[e.date]=bd[e.date]||[]).push(e);});
+  c.innerHTML=Object.keys(bd).sort().reverse().map(d=>`<div class="day-hdr"><strong>${fd(d)}</strong> — ${bd[d].length} object(s)</div><table><thead><tr><th>Object</th><th class="nc">Source</th><th class="nc">Extracted</th><th class="nc">LAD</th><th class="nc">Errors</th><th>Status</th><th>Notes</th></tr></thead><tbody>${bd[d].map(e=>`<tr><td><span class="obj-name">${e.object}</span></td><td class="num">${e.source.toLocaleString()}</td><td class="num">${e.extract.toLocaleString()}</td><td class="num">${e.lad.toLocaleString()}</td><td class="num ${e.error>0?'clr-e':''}">${e.error.toLocaleString()}</td><td>${pill(getStatus(e))}</td><td style="font-size:11px;color:var(--muted)">${e.desc||'—'}</td></tr>`).join('')}</tbody></table>`).join('');
+}
+
+function renderErrorsOnly(){
+  const tb=document.getElementById('errBody');
+  const er=entries.filter(e=>e.error>0);
+  if(!er.length){tb.innerHTML='<tr><td colspan="5" class="empty">No errors logged yet.</td></tr>';return;}
+  tb.innerHTML=er.sort((a,b)=>b.date.localeCompare(a.date)).map(e=>`<tr><td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fd(e.date)}</td><td><span class="obj-name">${e.object}</span></td><td><span class="spill p-w" style="font-size:10px">${e.errorType||'Unknown'}</span></td><td class="num clr-e">${e.error.toLocaleString()}</td><td style="font-size:12px;color:#aaaabc">${e.desc||'—'}</td></tr>`).join('');
+}
+
+function renderErrPanel(){
+  const p=document.getElementById('errPanel'),l=document.getElementById('errList');
+  const er=entries.filter(e=>e.error>0);
+  document.getElementById('errBadge').textContent=er.length+' error entr'+(er.length===1?'y':'ies');
+  if(!er.length){p.style.display='none';return;}
+  p.style.display='block';
+  l.innerHTML=er.map(e=>`<div class="err-item"><div><div class="err-obj">${e.object}</div><div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px">${fd(e.date)}</div></div><div class="err-type">${e.errorType||'—'}</div><div class="err-desc">${e.desc||'No description.'}</div><div class="err-cnt">✕ ${e.error.toLocaleString()}</div></div>`).join('');
+}
+
+function renderCharts(){
+  const ts2=document.getElementById('trendSec');
+  if(entries.length<2){ts2.style.display='none';return;}
+  ts2.style.display='grid';
+  const bd={};entries.forEach(e=>{bd[e.date]=bd[e.date]||{ex:0,er:0};bd[e.date].ex+=e.extract;bd[e.date].er+=e.error;});
+  const days=Object.keys(bd).sort().slice(-7);
+  const mxE=Math.max(...days.map(d=>bd[d].ex),1),mxR=Math.max(...days.map(d=>bd[d].er),1);
+  document.getElementById('exChart').innerHTML=days.map(d=>{const h=Math.max(4,(bd[d].ex/mxE)*80);return`<div class="bar-grp"><div class="bar-wrap"><div class="bar" style="height:${h}px;background:var(--accent)"></div></div><div class="bar-lbl">${d.slice(5)}</div></div>`;}).join('');
+  document.getElementById('erChart').innerHTML=days.map(d=>{const h=Math.max(4,(bd[d].er/mxR)*80);const c=bd[d].er>0?'var(--danger)':'var(--border)';return`<div class="bar-grp"><div class="bar-wrap"><div class="bar" style="height:${h}px;background:${c}"></div></div><div class="bar-lbl">${d.slice(5)}</div></div>`;}).join('');
+}
+
+// ════════════════════════════════════════════
+//  TABS / MODALS
+// ════════════════════════════════════════════
+function switchTab(n,el){['objects','timeline','links','daily','errors'].forEach(t=>document.getElementById('tab-'+t).style.display='none');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+n).style.display='block';el.classList.add('active');}
+function openData(){document.getElementById('dataModal').classList.add('open');}
+function openSetup(){document.getElementById('setupModal').classList.add('open');}
+function closeM(id){document.getElementById(id).classList.remove('open');}
+function bgClose(e,id){if(e.target===document.getElementById(id))closeM(id);}
+function openTimeline(obj){const t=obj&&timings[obj]?timings[obj]:{};document.getElementById('tlObj').value=obj||'';document.getElementById('tlObj').readOnly=!!obj;document.getElementById('tlDate').value=t.date||ts();document.getElementById('tlExt').value=t.ext!=null?t.ext:'';document.getElementById('tlTrans').value=t.trans!=null?t.trans:'';document.getElementById('tlLoad').value=t.load!=null?t.load:'';document.getElementById('tlRes').value=t.res!=null?t.res:'';document.getElementById('tlNotes').value=t.notes||'';calcTotal();document.getElementById('tlModal').classList.add('open');}
+function openLinks(obj){const lnk=obj&&spLinks[obj]?spLinks[obj]:{};document.getElementById('lObj').value=obj||'';document.getElementById('lObj').readOnly=!!obj;document.getElementById('lSql').value=lnk.sql||'';document.getElementById('lSqlLbl').value=lnk.sqlLbl||'';document.getElementById('lSucc').value=lnk.succ||'';document.getElementById('lSuccLbl').value=lnk.succLbl||'';document.getElementById('lErrLog').value=lnk.errLog||'';document.getElementById('lErrLogLbl').value=lnk.errLogLbl||'';document.getElementById('linksModal').classList.add('open');}
+
+// ════════════════════════════════════════════
+//  EMAIL REPORT + CSV
+// ════════════════════════════════════════════
+function copyReport(){
+  const td=NOW.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const s=entries.reduce((a,e)=>({src:a.src+e.source,ext:a.ext+e.extract,lad:a.lad+e.lad,err:a.err+e.error}),{src:0,ext:0,lad:0,err:0});
+  const objs=[...new Set(entries.map(e=>e.object))];
+  let r=`DAILY MIGRATION STATUS — BW → UAT CONS\n${td}\n${'='.repeat(52)}\n\nSUMMARY\n-------\nSource Count  : ${s.src.toLocaleString()}\nExtracted     : ${s.ext.toLocaleString()} (${pct(s.ext,s.src)}%)\nLAD Count     : ${s.lad.toLocaleString()} (${pct(s.lad,s.src)}%)\nErrors        : ${s.err.toLocaleString()} (${pct(s.err,s.ext)}% error rate)\nObjects       : ${objs.length}\n\nOBJECT BREAKDOWN\n----------------\n`;
+  objs.forEach(obj=>{
+    const e=entries.filter(x=>x.object===obj).at(-1);
+    const ico={ok:'✅',warn:'⚠️',err:'❌',pend:'⏳'}[getStatus(e)]||'•';
+    r+=`${ico} ${obj}\n   Source: ${e.source.toLocaleString()} | Extracted: ${e.extract.toLocaleString()} | LAD: ${e.lad.toLocaleString()} | Errors: ${e.error.toLocaleString()}\n`;
+    if(e.error>0&&e.desc)r+=`   ↳ ${e.errorType||'Error'}: ${e.desc}\n`;
+    const t=timings[obj];if(t&&t.total)r+=`   ⏱ Extract ${fmtTime(t.ext)} | Transform ${fmtTime(t.trans)} | Load ${fmtTime(t.load)} | Resolution ${fmtTime(t.res)} | Total ${fmtTime(t.total)}\n`;
+    const lnk=spLinks[obj]||{};
+    if(lnk.sql)r+=`   📄 SQL: ${lnk.sqlLbl||lnk.sql}\n`;if(lnk.succ)r+=`   ✅ Success: ${lnk.succLbl||lnk.succ}\n`;if(lnk.errLog)r+=`   ❌ Error Log: ${lnk.errLogLbl||lnk.errLog}\n`;
+    r+='\n';
+  });
+  r+='— Migration Control Tower';
+  navigator.clipboard.writeText(r).then(()=>showToast('✅ Email report copied to clipboard!'));
+}
+
+function exportCSV(){
+  const h='Date,Object,Source,Extracted,LAD,Errors,Error Type,Status,Notes,Extraction(mins),Transformation(mins),Load(mins),Resolution(mins),Total(mins),SQL Link,Success Link,Error Log Link\n';
+  const rows=entries.map(e=>{const l=spLinks[e.object]||{},t=timings[e.object]||{};return[e.date,e.object,e.source,e.extract,e.lad,e.error,e.errorType||'',getStatus(e),(e.desc||'').replace(/,/g,';'),t.ext||'',t.trans||'',t.load||'',t.res||'',t.total||'',l.sql||'',l.succ||'',l.errLog||''].join(',');}).join('\n');
+  const b=new Blob([h+rows],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='migration_'+ts()+'.csv';a.click();
+}
+</script>
+</body>
+</html>
